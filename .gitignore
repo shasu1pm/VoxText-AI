@@ -1,0 +1,59 @@
+# Dependencies
+node_modules/
+Frontend/node_modules/
+
+# Build output
+dist/
+build/
+Frontend/dist/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+.eggs/
+venv/
+.venv/
+env/
+.env
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Cache
+.cache/
+.parcel-cache/
+.eslintcache
+.tsbuildinfo
+
+# Claude Code
+.claude/
+
+# OS
+desktop.ini
+ehthumbs.db
+
+# Environment files (keep .env.example)
+.env
+.env.local
+.env.production
+!.env.example
+
+# Temp files
+*.tmp
+*.temp

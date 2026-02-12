@@ -1,0 +1,30 @@
+@import './fonts.css';
+@import './tailwind.css';
+@import './theme.css';
+
+/* Hide scrollbars globally while maintaining scroll functionality */
+* {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+
+*::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+}
+
+/* Ensure no horizontal overflow at any zoom level */
+html, body {
+  overflow-x: hidden;
+  max-width: 100vw;
+  position: relative;
+}
+
+/* Utility class for hidden scrollbars */
+.scrollbar-hide {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
