@@ -429,6 +429,7 @@ def get_metadata():
     # 3. Tags hint (creators often tag videos with their language)
     # 4. YouTube's "Video language" field (set by uploader in YouTube Studio)
     # 5. Auto-caption original language (YouTube ASR detection)
+    # 6. Fallback: Use first available caption language
     language = detect_language_from_title(title)
 
     if not language:
@@ -443,17 +444,40 @@ def get_metadata():
     if not language:
         language = detect_original_caption_language(info.get("automatic_captions"))
 
+    # Fallback: If still no language detected, use first available caption language
+    if not language:
+        # Filter out live_chat from subtitles
+        temp_manual_subs = {k: v for k, v in (info.get("subtitles") or {}).items() if k != "live_chat"}
+        temp_auto_caps = info.get("automatic_captions") or {}
+
+        # Try manual subtitles first
+        for lang_code in temp_manual_subs:
+            if temp_manual_subs[lang_code]:
+                language = resolve_language(lang_code) or lang_code
+                break
+
+        # Then try automatic captions
+        if not language:
+            for lang_code in temp_auto_caps:
+                if temp_auto_caps[lang_code]:
+                    language = resolve_language(lang_code) or lang_code
+                    break
+
     playable_in_embed = info.get("playable_in_embed", True)
 
     # Caption availability info
     auto_caps = info.get("automatic_captions") or {}
     manual_subs = info.get("subtitles") or {}
+
+    # Filter out live_chat from manual_subs (it's not a real caption)
+    manual_subs = {k: v for k, v in manual_subs.items() if k != "live_chat"}
+
     has_captions = bool(auto_caps or manual_subs)
     # Determine the caption language that will actually be used (matches /api/captions auto-pick logic)
     caption_language = None
     caption_language_code = None
     for lang_code in manual_subs:
-        if lang_code != "live_chat" and manual_subs[lang_code]:
+        if manual_subs[lang_code]:
             caption_language = resolve_language(lang_code) or lang_code
             caption_language_code = lang_code
             break
@@ -515,6 +539,9 @@ def get_captions():
 
     manual_subs = info.get("subtitles") or {}
     auto_caps = info.get("automatic_captions") or {}
+
+    # Filter out live_chat (it's not a real caption)
+    manual_subs = {k: v for k, v in manual_subs.items() if k != "live_chat"}
 
     if not manual_subs and not auto_caps:
         return jsonify({"error": "No captions available for this video"}), 404
@@ -734,6 +761,10 @@ def get_formats():
     duration = info.get("duration") or 0
     formats_list = info.get("formats") or []
 
+    # Check if video was live or is a premiere (might not have standard formats)
+    was_live = info.get("was_live", False)
+    is_live = info.get("is_live", False)
+
     QUALITY_MAP = {
         "720p HD": 720,
         "480p": 480,
@@ -753,16 +784,34 @@ def get_formats():
         best = None
         for f in formats_list:
             h = f.get("height")
-            if not h:
+            vcodec = f.get("vcodec")
+
+            # Skip audio-only formats and formats without video codec
+            if not h or not vcodec or vcodec == "none":
                 continue
-            if h == target_height or (h <= target_height and (not best or h > best.get("height", 0))):
+
+            # Find exact match or closest match below target
+            if h == target_height:
                 best = f
+                break
+            elif h <= target_height and (not best or h > best.get("height", 0)):
+                best = f
+
         if best:
             size_bytes = best.get("filesize") or best.get("filesize_approx")
-            if not size_bytes and best.get("tbr") and duration:
+            # Estimate size if not provided and we have bitrate and duration
+            if not size_bytes and best.get("tbr") and duration > 0:
                 size_bytes = int(best["tbr"] * 1000 / 8 * duration * 1.1)
+            # If still no size and no duration, use a default estimate
+            elif not size_bytes and not duration:
+                # Estimate based on typical bitrates (very rough)
+                typical_bitrate = {720: 2500, 480: 1000, 360: 750, 240: 400}.get(target_height, 1000)
+                # Assume 5 minutes if no duration (for livestreams/premieres)
+                size_bytes = int(typical_bitrate * 1000 / 8 * 300)
+
             size_mb = round((size_bytes or 0) / (1024 * 1024), 1)
-            over_limit = duration > DURATION_LIMITS[quality_label]
+            over_limit = duration > DURATION_LIMITS[quality_label] if duration > 0 else False
+
             result[quality_label] = {
                 "sizeMB": size_mb,
                 "available": True,
@@ -775,15 +824,27 @@ def get_formats():
     # Audio Only
     best_audio = None
     for f in formats_list:
-        if f.get("acodec") and f.get("acodec") != "none" and not f.get("height"):
+        acodec = f.get("acodec")
+        vcodec = f.get("vcodec")
+
+        # Audio-only format: has audio codec, no video codec or height
+        if acodec and acodec != "none" and (not vcodec or vcodec == "none" or not f.get("height")):
+            # Prefer higher quality audio
             if not best_audio or (f.get("abr") or 0) > (best_audio.get("abr") or 0):
                 best_audio = f
+
     if best_audio:
         size_bytes = best_audio.get("filesize") or best_audio.get("filesize_approx")
-        if not size_bytes and best_audio.get("abr") and duration:
+        # Estimate size if not provided
+        if not size_bytes and best_audio.get("abr") and duration > 0:
             size_bytes = int(best_audio["abr"] * 1000 / 8 * duration)
+        # If still no size and no duration, estimate for 5 minutes
+        elif not size_bytes and not duration:
+            typical_audio_bitrate = best_audio.get("abr") or 128
+            size_bytes = int(typical_audio_bitrate * 1000 / 8 * 300)
+
         size_mb = round((size_bytes or 0) / (1024 * 1024), 1)
-        over_limit = duration > DURATION_LIMITS["Audio Only"]
+        over_limit = duration > DURATION_LIMITS["Audio Only"] if duration > 0 else False
         result["Audio Only"] = {"sizeMB": size_mb, "available": True, "overLimit": over_limit, "maxMinutes": 60}
     else:
         result["Audio Only"] = {"sizeMB": 0, "available": False, "overLimit": False, "maxMinutes": 60}
