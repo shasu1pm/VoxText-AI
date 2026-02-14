@@ -385,6 +385,59 @@ def detect_language_from_tags(tags):
     return max(lang_counts, key=lang_counts.get)
 
 
+def detect_language_from_description(description, channel):
+    """Detect language from video description and channel name.
+    Looks for explicit language mentions in description."""
+    if not description and not channel:
+        return None
+
+    combined_text = f"{description or ''} {channel or ''}".lower()
+
+    # Check for explicit language mentions in description/channel
+    # Priority order: explicit mentions first
+    language_keywords = {
+        "Tamil": ["tamil", "தமிழ்", " ta ", " tn "],
+        "Telugu": ["telugu", "తెలుగు", " te ", " ap ", " telangana"],
+        "Hindi": ["hindi", "हिन्दी", " hi "],
+        "Kannada": ["kannada", "ಕನ್ನಡ", " kn ", " karnataka"],
+        "Malayalam": ["malayalam", "മലയാളം", " ml ", " kerala"],
+        "Bengali": ["bengali", "bangla", "বাংলা", " bn ", " wb "],
+        "Marathi": ["marathi", "मराठी", " mr ", " maharashtra"],
+        "Gujarati": ["gujarati", "ગુજરાતી", " gu "],
+        "Punjabi": ["punjabi", "ਪੰਜਾਬੀ", " pa "],
+        "Sanskrit": ["sanskrit", "संस्कृत", " sa "],
+    }
+
+    # Count mentions of each language
+    lang_scores = {}
+    for lang, keywords in language_keywords.items():
+        score = sum(combined_text.count(kw) for kw in keywords)
+        if score > 0:
+            lang_scores[lang] = score
+
+    # Special handling for devotional/spiritual content
+    # Check for spiritual keywords that might indicate South Indian languages
+    if "spiritual" in combined_text or "devotional" in combined_text or "bhakti" in combined_text:
+        # Check title/description for deity names associated with regions
+        south_indian_deities = [
+            "venkateshwara", "venkateswara", "balaji", "tirupati",  # Tamil/Telugu
+            "murugan", "subrahmanya", "ayyappa", "meenakshi",  # Tamil
+            "vishnu", "shiva", "krishna", "rama"  # Pan-Indian but common in South
+        ]
+        for deity in south_indian_deities:
+            if deity in combined_text:
+                # If no other language detected and has South Indian deity
+                # Default to Tamil for devotional content (common in diaspora)
+                if not lang_scores:
+                    lang_scores["Tamil"] = 0.5
+
+    # Return language with highest mentions
+    if lang_scores:
+        return max(lang_scores, key=lang_scores.get)
+
+    return None
+
+
 def detect_original_caption_language(auto_caps):
     """Find the original auto-detected language from YouTube's ASR.
     The original track has kind=asr and no tlang param in URL."""
@@ -424,13 +477,18 @@ def get_metadata():
     video_id = info.get("id") or ""
 
     # Language detection priority:
-    # 1. Title hint: "through/via" patterns + hashtag parsing + general keywords
-    # 2. Non-Latin script detection in title (Tamil, Hindi, etc.)
-    # 3. Tags hint (creators often tag videos with their language)
-    # 4. YouTube's "Video language" field (set by uploader in YouTube Studio)
-    # 5. Auto-caption original language (YouTube ASR detection)
-    # 6. Fallback: Use first available caption language
-    language = detect_language_from_title(title)
+    # 1. Description/Channel hints (most reliable for regional content)
+    # 2. Title hint: "through/via" patterns + hashtag parsing + general keywords
+    # 3. Non-Latin script detection in title (Tamil, Hindi, etc.)
+    # 4. Tags hint (creators often tag videos with their language)
+    # 5. YouTube's "Video language" field (set by uploader in YouTube Studio)
+    # 6. Auto-caption original language (YouTube ASR detection - can be wrong!)
+    # 7. Fallback: Use first available caption language
+
+    language = detect_language_from_description(info.get("description"), channel)
+
+    if not language:
+        language = detect_language_from_title(title)
 
     if not language:
         language = detect_language_from_script(title)
