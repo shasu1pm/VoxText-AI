@@ -16,6 +16,12 @@ import yt_dlp
 app = Flask(__name__)
 CORS(app, expose_headers=["Content-Disposition"])
 
+
+@app.route("/health", methods=["GET"])
+def health_check():
+    """Health check endpoint for monitoring."""
+    return jsonify({"status": "healthy", "service": "voxtext-backend"}), 200
+
 # In-memory cache for yt-dlp info to avoid duplicate extractions (429 rate limits)
 # Key: video URL, Value: {"info": dict, "cookie_jar": CookieJar, "timestamp": float}
 _info_cache = {}
@@ -882,4 +888,5 @@ def download_video():
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000, debug=True)
+    # Development server - for production use gunicorn
+    app.run(host="0.0.0.0", port=5000, debug=False)

@@ -1,0 +1,39 @@
+name: Deploy to Coolify
+
+# This workflow can be used for manual deployment or GitHub Actions integration
+# For automatic deploys, Coolify's webhooks are recommended (easier setup)
+
+on:
+  workflow_dispatch: # Allows manual trigger from Actions tab
+  push:
+    branches:
+      - main
+    paths:
+      - 'Frontend/**'
+      - 'Backend/**'
+      - 'docker-compose.yml'
+
+jobs:
+  notify-coolify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Coolify Backend Deployment
+        if: contains(github.event.head_commit.modified, 'Backend/') || github.event_name == 'workflow_dispatch'
+        run: |
+          curl -X POST "${{ secrets.COOLIFY_BACKEND_WEBHOOK_URL }}"
+        continue-on-error: true
+
+      - name: Trigger Coolify Frontend Deployment
+        if: contains(github.event.head_commit.modified, 'Frontend/') || github.event_name == 'workflow_dispatch'
+        run: |
+          curl -X POST "${{ secrets.COOLIFY_FRONTEND_WEBHOOK_URL }}"
+        continue-on-error: true
+
+# To use this workflow:
+# 1. Go to your GitHub repo → Settings → Secrets and variables → Actions
+# 2. Add these secrets:
+#    - COOLIFY_BACKEND_WEBHOOK_URL (from Coolify backend app settings)
+#    - COOLIFY_FRONTEND_WEBHOOK_URL (from Coolify frontend app settings)
+# 3. Commit changes to trigger deployment
+#
+# Note: Coolify's built-in webhooks are simpler and recommended for most users

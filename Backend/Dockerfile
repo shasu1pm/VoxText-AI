@@ -22,5 +22,5 @@ COPY server.py .
 # Expose Flask port
 EXPOSE 5000
 
-# Start Flask server (production: use waitress or gunicorn)
-CMD ["python", "server.py"]
+# Start with Gunicorn for production (4 workers, adjust based on CPU cores)
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "--timeout", "120", "--access-logfile", "-", "--error-logfile", "-", "server:app"]
