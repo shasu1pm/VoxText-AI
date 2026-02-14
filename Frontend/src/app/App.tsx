@@ -90,6 +90,9 @@ const CheckIcon = ({ className }: { className?: string }) => (
 );
 
 export default function App() {
+  const apiBaseUrl = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '');
+  const apiUrl = (path: string) => `${apiBaseUrl}${path.startsWith('/') ? path : `/${path}`}`;
+
   const [isDesktopLayout, setIsDesktopLayout] = useState(() => {
     if (typeof window === 'undefined') return true;
     const scale = window.visualViewport?.scale;
@@ -281,7 +284,7 @@ export default function App() {
       const timeoutId = setTimeout(() => controller.abort(), 15000);
 
       const response = await fetch(
-        `http://127.0.0.1:5000/api/metadata?url=${encodeURIComponent(url)}`,
+        apiUrl(`/metadata?url=${encodeURIComponent(url)}`),
         { signal: controller.signal }
       );
 
@@ -674,7 +677,7 @@ export default function App() {
       const timeoutId = setTimeout(() => controller.abort(), 10000);
 
       const response = await fetch(
-        `http://127.0.0.1:5000/api/metadata?url=${encodeURIComponent(url)}`,
+        apiUrl(`/metadata?url=${encodeURIComponent(url)}`),
         { signal: controller.signal }
       );
 
@@ -1222,7 +1225,7 @@ export default function App() {
     setFormatSizes(null);
 
     try {
-      const resp = await fetch(`http://127.0.0.1:5000/api/formats?url=${encodeURIComponent(youtubeUrl)}`);
+      const resp = await fetch(apiUrl(`/formats?url=${encodeURIComponent(youtubeUrl)}`));
       const data = await resp.json();
       if (!resp.ok) {
         setDownloadError(data.error || 'Failed to fetch format info');
@@ -1271,7 +1274,7 @@ export default function App() {
       if (langParam) params.set('lang', langParam);
 
       const response = await fetch(
-        `http://127.0.0.1:5000/api/captions?${params.toString()}`,
+        apiUrl(`/captions?${params.toString()}`),
         { signal: controller.signal }
       );
 
@@ -1372,7 +1375,7 @@ export default function App() {
 
     try {
       const resp = await fetch(
-        `http://127.0.0.1:5000/api/download?url=${encodeURIComponent(youtubeUrl)}&quality=${encodeURIComponent(quality)}`,
+        apiUrl(`/download?url=${encodeURIComponent(youtubeUrl)}&quality=${encodeURIComponent(quality)}`),
         { signal: AbortSignal.timeout(600000) }
       );
 

@@ -73,12 +73,13 @@ api.voxtext.in or voxtext.in/api (Backend) → Flask + yt-dlp
    - **Dockerfile Location:** `/Frontend/Dockerfile`
    - **Build Context:** `/Frontend`
 
-3. **Environment Variables** (if needed for API URL)
+3. **Build Variables** (Frontend/Vite uses build-time vars)
    ```
-   VITE_API_URL=https://api.voxtext.in
+   VITE_API_URL=https://api.voxtext.in/api
    ```
 
-   > Note: Update your frontend code to use `VITE_API_URL` environment variable for API calls
+   > Note: Backend routes are under `/api/*`, so include `/api` in the base URL.
+   > Optional: `VITE_YOUTUBE_API_KEY=<your-key>`
 
 4. **Domain Settings**
    - Add custom domain: `voxtext.in`

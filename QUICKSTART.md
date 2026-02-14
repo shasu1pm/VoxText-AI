@@ -74,9 +74,13 @@ Your GitHub repo is ready with:
    Build Context: Frontend
    ```
 
-4. **Environment Variables (if your frontend needs it):**
+4. **Build Variables (for frontend build):**
    ```
-   VITE_API_URL=https://api.voxtext.in
+   VITE_API_URL=https://api.voxtext.in/api
+   ```
+   Optional:
+   ```
+   VITE_YOUTUBE_API_KEY=your_youtube_api_key
    ```
 
 5. **Domain Configuration:**

@@ -3,6 +3,12 @@ FROM node:20-alpine AS build
 
 WORKDIR /app
 
+# Build-time frontend env vars (Vite embeds these during npm run build)
+ARG VITE_API_URL=/api
+ARG VITE_YOUTUBE_API_KEY=
+ENV VITE_API_URL=${VITE_API_URL}
+ENV VITE_YOUTUBE_API_KEY=${VITE_YOUTUBE_API_KEY}
+
 # Copy package files
 COPY package*.json ./
 
