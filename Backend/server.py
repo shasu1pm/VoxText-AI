@@ -12,6 +12,14 @@ import urllib.parse
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import yt_dlp
+from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api._errors import (
+    TranscriptsDisabled,
+    NoTranscriptFound,
+    VideoUnavailable,
+    TooManyRequests,
+    YouTubeRequestFailed
+)
 
 app = Flask(__name__)
 CORS(app, expose_headers=["Content-Disposition"])
@@ -35,6 +43,81 @@ _CAPTION_CACHE_TTL = 600  # 10 minutes
 # Shared cookie jar across all yt-dlp sessions (persists YouTube auth cookies)
 import http.cookiejar
 _cookie_jar = http.cookiejar.MozillaCookieJar()
+
+
+def _extract_video_id(url):
+    """Extract YouTube video ID from URL."""
+    # Handle various YouTube URL formats
+    patterns = [
+        r'(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})',
+        r'youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, url)
+        if match:
+            return match.group(1)
+    return None
+
+
+def _get_transcript_via_api(video_id, languages=None):
+    """
+    Get transcript using youtube-transcript-api (bypasses bot detection).
+    Returns dict with transcript data or None if unavailable.
+    """
+    if not video_id:
+        return None
+
+    try:
+        api = YouTubeTranscriptApi()
+
+        # Get list of available transcripts
+        transcript_list = api.list(video_id)
+
+        # Build available languages dict
+        available_langs = {}
+        for trans in transcript_list:
+            available_langs[trans.language_code] = {
+                "name": trans.language,
+                "type": "manual" if not trans.is_generated else "auto"
+            }
+
+        # Fetch transcript in preferred language
+        if languages:
+            transcript = api.fetch(video_id, languages=languages)
+        else:
+            # Get first available (prefer manual over auto)
+            manual_transcripts = [t for t in transcript_list if not t.is_generated]
+            if manual_transcripts:
+                transcript = manual_transcripts[0].fetch()
+            else:
+                transcript = list(transcript_list)[0].fetch()
+
+        # Convert to segments format
+        segments = []
+        for entry in transcript:
+            segments.append({
+                "startMs": int(entry.start * 1000),
+                "endMs": int((entry.start + entry.duration) * 1000),
+                "text": entry.text
+            })
+
+        return {
+            "language": transcript.language_code,
+            "languageName": transcript.language,
+            "segments": segments,
+            "type": "manual" if not transcript.is_generated else "auto",
+            "availableLanguages": available_langs
+        }
+
+    except (TranscriptsDisabled, NoTranscriptFound):
+        return None
+    except (VideoUnavailable, TooManyRequests, YouTubeRequestFailed) as e:
+        # These errors mean we should fall back to yt-dlp
+        return None
+    except Exception as e:
+        # Unexpected error, log but don't crash
+        print(f"youtube-transcript-api error: {e}")
+        return None
 
 
 def _extract_info_cached(url):
@@ -589,11 +672,46 @@ def get_metadata():
 
 @app.route("/api/captions", methods=["GET"])
 def get_captions():
+    """
+    Get video captions/transcripts.
+    Primary method: youtube-transcript-api (bypasses bot detection)
+    Fallback: yt-dlp (if transcript API fails)
+    """
     url = request.args.get("url")
     lang = request.args.get("lang")
     if not url:
         return jsonify({"error": "Missing 'url' query parameter"}), 400
 
+    # Extract video ID
+    video_id = _extract_video_id(url)
+    if not video_id:
+        return jsonify({"error": "Invalid YouTube URL"}), 400
+
+    # === PRIMARY METHOD: youtube-transcript-api ===
+    # This works reliably on VPS/cloud IPs without bot detection
+    try:
+        # Build language preference list
+        preferred_langs = []
+        if lang:
+            preferred_langs.append(lang)
+            # Add base language fallback (e.g., "en" for "en-US")
+            if "-" in lang:
+                preferred_langs.append(lang.split("-")[0])
+
+        # Try to get transcript via API
+        transcript_data = _get_transcript_via_api(video_id, languages=preferred_langs if preferred_langs else None)
+
+        if transcript_data:
+            # Success! Return the transcript
+            return jsonify(transcript_data)
+
+    except Exception as e:
+        # Log but don't fail - we'll try yt-dlp fallback
+        print(f"youtube-transcript-api failed: {e}")
+
+    # === FALLBACK METHOD: yt-dlp ===
+    # Only used if youtube-transcript-api fails (rare)
+    # This may fail on VPS due to bot detection, but kept for compatibility
     try:
         info = _extract_info_cached(url)
     except yt_dlp.utils.DownloadError as e:
@@ -602,6 +720,8 @@ def get_captions():
             return jsonify({"error": "This video is private"}), 403
         if "Video unavailable" in error_msg or "removed" in error_msg:
             return jsonify({"error": "This video is unavailable or deleted"}), 404
+        if "Sign in to confirm" in error_msg or "bot" in error_msg.lower():
+            return jsonify({"error": "Video temporarily unavailable due to rate limiting. Please try again."}), 429
         return jsonify({"error": error_msg}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -615,33 +735,21 @@ def get_captions():
     if not manual_subs and not auto_caps:
         return jsonify({"error": "No captions available for this video"}), 404
 
-    # Alias map: frontend codes → YouTube auto_caps codes
-    LANG_ALIASES = {
-        "zh": "zh-Hans", "zh-tw": "zh-Hant", "zh-cn": "zh-Hans",
-        "pt-br": "pt",
-    }
-
-    # Determine which language to fetch
+    # Determine target language
     target_lang = lang
     if not target_lang:
-        # Auto-pick: prefer manual, then original ASR track
+        # Auto-pick: prefer manual, then original ASR
         for lc in manual_subs:
-            if lc != "live_chat" and manual_subs[lc]:
+            if manual_subs[lc]:
                 target_lang = lc
                 break
         if not target_lang:
             for lc, tracks in auto_caps.items():
-                for track in tracks[:1]:
-                    track_url = track.get("url", "")
-                    if "kind=asr" in track_url and "tlang" not in track_url:
-                        target_lang = lc
-                        break
-                if target_lang:
+                if tracks:
+                    target_lang = lc
                     break
-            if not target_lang and auto_caps:
-                target_lang = next(iter(auto_caps))
 
-    # Resolve language: case-insensitive match, then alias, then base-language fallback
+    # Find matching language (case-insensitive)
     manual_lower = {k.lower(): k for k in manual_subs}
     auto_lower = {k.lower(): k for k in auto_caps}
     tl = target_lang.lower() if target_lang else ""
@@ -650,7 +758,6 @@ def get_captions():
     tracks = None
     caption_type = "manual"
 
-    # 1. Case-insensitive match
     if tl in manual_lower:
         resolved_lang = manual_lower[tl]
         tracks = manual_subs[resolved_lang]
@@ -658,20 +765,8 @@ def get_captions():
         resolved_lang = auto_lower[tl]
         tracks = auto_caps[resolved_lang]
         caption_type = "auto"
-
-    # 2. Alias (e.g., zh-TW → zh-Hant)
-    if not tracks and tl in LANG_ALIASES:
-        alias = LANG_ALIASES[tl].lower()
-        if alias in manual_lower:
-            resolved_lang = manual_lower[alias]
-            tracks = manual_subs[resolved_lang]
-        elif alias in auto_lower:
-            resolved_lang = auto_lower[alias]
-            tracks = auto_caps[resolved_lang]
-            caption_type = "auto"
-
-    # 3. Base language fallback (e.g., "en" for "en-US")
-    if not tracks:
+    else:
+        # Base language fallback
         base = tl.split("-")[0]
         for lc in manual_subs:
             if lc.lower().split("-")[0] == base:
@@ -689,130 +784,40 @@ def get_captions():
     if not tracks:
         return jsonify({"error": f"No captions available for language: {lang}"}), 404
 
-    target_lang = resolved_lang
-
-    # Find json3 format URL, fallback to vtt, then any
+    # Get caption URL
     caption_url = None
     for track in tracks:
         if track.get("ext") == "json3":
             caption_url = track.get("url")
             break
-    if not caption_url:
-        for track in tracks:
-            if track.get("ext") == "vtt":
-                caption_url = track.get("url")
-                break
     if not caption_url and tracks:
         caption_url = tracks[0].get("url")
 
     if not caption_url:
         return jsonify({"error": "Could not find caption download URL"}), 404
 
-    # --- Smart caption fetch with result caching ---
-    # For translated captions (tlang= in URL), YouTube aggressively rate-limits (429).
-    # Strategy: try YouTube first, fall back to fetching original + Google Translate.
-
-    is_translation = "tlang=" in caption_url
-    result_cache_key = (url, target_lang)
-    now = time.time()
-
-    # Clean expired result cache entries
-    expired_results = [k for k, v in _caption_result_cache.items() if now - v["timestamp"] > _CAPTION_CACHE_TTL]
-    for k in expired_results:
-        del _caption_result_cache[k]
-
-    # Return cached result if available
-    if result_cache_key in _caption_result_cache:
-        return jsonify(_caption_result_cache[result_cache_key]["result"])
-
-    # Try fetching caption content from YouTube
-    raw = None
-    if not is_translation:
-        # Original captions: raw HTTP is fast and reliable
-        try:
-            raw = _fetch_url_with_cookies(caption_url)
-        except urllib.error.HTTPError as e:
-            if e.code not in (429, 403):
-                return jsonify({"error": f"Failed to fetch captions: HTTP {e.code}"}), 500
-        except Exception:
-            pass
-
+    # Fetch and parse captions
+    try:
+        raw = _fetch_url_with_cookies(caption_url)
         if not raw:
-            # Fallback for original captions: try yt-dlp's HTTP handler
-            try:
-                raw = _fetch_url_via_ytdlp(caption_url)
-            except Exception:
-                pass
-    else:
-        # For translated captions: try ONE quick fetch, don't waste time retrying
-        # YouTube aggressively 429s translated caption URLs (tlang=)
-        try:
-            raw = _fetch_url_with_cookies(caption_url)
-        except Exception:
-            pass  # Expected to fail with 429; fall through to Google Translate
+            raw = _fetch_url_via_ytdlp(caption_url)
 
-    # Parse YouTube response if we got it
-    segments = None
-    if raw:
         segments = _parse_caption_content(raw)
+        if not segments:
+            return jsonify({"error": "Failed to parse captions"}), 500
 
-    # If YouTube fetch failed or returned empty (common for translated captions with 429),
-    # fall back to fetching ORIGINAL captions + translating via Google Translate
-    if not segments and is_translation:
-        # Find the original ASR caption track (no tlang, works without 429)
-        orig_lang_code = None
-        orig_url = None
-        for lc, orig_tracks in auto_caps.items():
-            for track in orig_tracks[:1]:
-                u = track.get("url", "")
-                if "kind=asr" in u and "tlang" not in u:
-                    orig_lang_code = lc.split("-")[0]  # "hi-orig" → "hi"
-                    for t in orig_tracks:
-                        if t.get("ext") == "json3":
-                            orig_url = t.get("url")
-                            break
-                    if not orig_url:
-                        orig_url = orig_tracks[0].get("url")
-                    break
-            if orig_url:
-                break
+        lang_name = resolve_language(resolved_lang) or resolved_lang
+        return jsonify({
+            "language": resolved_lang,
+            "languageName": lang_name,
+            "segments": segments,
+            "type": caption_type,
+        })
 
-        if orig_url:
-            orig_raw = None
-            try:
-                orig_raw = _fetch_url_with_cookies(orig_url)
-            except Exception:
-                try:
-                    orig_raw = _fetch_url_via_ytdlp(orig_url)
-                except Exception:
-                    pass
+    except Exception as e:
+        return jsonify({"error": f"Failed to fetch captions: {str(e)}"}), 500
 
-            if orig_raw:
-                orig_segments = _parse_caption_content(orig_raw)
-                if orig_segments:
-                    try:
-                        segments = _translate_segments(
-                            orig_segments, orig_lang_code, target_lang
-                        )
-                        caption_type = "auto-translated"
-                    except Exception as e:
-                        print(f"[captions] Google Translate fallback failed: {e}")
 
-    if not segments:
-        return jsonify({"error": "Failed to fetch captions. Please try again."}), 500
-
-    lang_name = resolve_language(target_lang) or target_lang
-    result = {
-        "segments": segments,
-        "language": target_lang,
-        "languageName": lang_name,
-        "type": caption_type,
-    }
-
-    # Cache the final result
-    _caption_result_cache[result_cache_key] = {"result": result, "timestamp": time.time()}
-
-    return jsonify(result)
 
 
 @app.route("/api/formats", methods=["GET"])
