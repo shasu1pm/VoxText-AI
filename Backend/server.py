@@ -55,7 +55,10 @@ def _extract_info_cached(url):
         "geo_bypass": True,
         "ignore_no_formats_error": True,
         "noplaylist": True,
-        "extractor_args": {"youtube": {"player_client": ["android"]}},
+        "extractor_args": {"youtube": {"player_client": ["ios", "android", "web"]}},
+        "http_headers": {
+            "User-Agent": "com.google.ios.youtube/19.16.3 (iPhone14,5; U; CPU iOS 15_6 like Mac OS X)"
+        },
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         # Inject shared cookie jar so cookies persist across requests
