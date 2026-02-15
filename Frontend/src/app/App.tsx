@@ -2,7 +2,6 @@ import { Coffee } from 'lucide-react';
 import React, { useCallback, useEffect, useState, useRef } from 'react';
 import bgImage from '../assets/images/2e9df151a54b12fe338eb91b19c78ee41025ea80.png';
 import logoImage from '../assets/images/19470e93731c079afd8132566ea49f7d11cf333b.png';
-import YouTubeClient from '../lib/youtube-client';
 
 // Custom LinkedIn Icon Component
 const LinkedInIcon = ({ className }: { className?: string }) => (
@@ -1052,7 +1051,7 @@ export default function App() {
       }
       setVideoTitle(finalTitle);
       
-      let finalLanguage = 'English';
+      let finalLanguage = '—';
       // Prefer language from yt-dlp backend (via metadata), fall back to standalone detection
       const metaLang = metadataResult.status === 'fulfilled' ? metadataResult.value?.language : null;
       if (metaLang) {
@@ -1091,7 +1090,7 @@ export default function App() {
       console.error('❌ Unexpected error in handleReadUrl:', error);
       const fallbackTitle = videoId ? `YouTube Video • ${videoId}` : 'YouTube Video';
       setVideoTitle(fallbackTitle);
-      setDetectedLanguage('English');
+      setDetectedLanguage('—');
       
       const elapsed = Date.now() - startTime;
       const remainingTime = Math.max(totalDuration - elapsed, 0);
@@ -1268,14 +1267,34 @@ export default function App() {
     }, 200);
 
     try {
-      // 🚀 CLIENT-SIDE FETCHING - Bypasses VPS IP blocks!
-      // Fetches directly from YouTube using user's browser (user's home IP)
-      const data = await YouTubeClient.getTranscript(youtubeUrl, langParam || undefined);
+      // Server-side captions fetch (works reliably in production; avoids browser CORS issues)
+      const qs = new URLSearchParams({ url: youtubeUrl });
+      if (langParam) qs.set('lang', langParam);
+
+      const resp = await fetch(
+        apiUrl(`/captions?${qs.toString()}`),
+        { signal: AbortSignal.timeout(60000) }
+      );
+      const data = await resp.json();
       clearInterval(progressInterval);
+
+      if (!resp.ok) {
+        setTranslateProgress(0);
+        setTranscriptError(data?.error || 'Failed to fetch captions. Please try again.');
+        return;
+      }
+
       if (data.segments && data.segments.length > 0) {
         setTranslateProgress(100);
         setTranscriptSegments(data.segments);
         setTranscriptGenerated(true);
+        // Sync subtitle language with what the backend actually returned.
+        setCaptionLanguage(data.languageName || captionLanguage || null);
+        setCaptionLanguageCode(data.language || captionLanguageCode || null);
+        setHasCaptions(true);
+        if (data.availableLanguages) {
+          setAvailableCaptionLanguages(data.availableLanguages);
+        }
         console.log(`✅ Fetched ${data.segments.length} transcript segments (${data.languageName}, ${data.type})`);
       } else {
         setTranslateProgress(0);

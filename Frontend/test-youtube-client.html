@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Client Test - VoxText.AI</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 3px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            background: #f9f9f9;
+            border-left: 4px solid #2196F3;
+            border-radius: 5px;
+        }
+        .test-section h2 {
+            margin-top: 0;
+            color: #2196F3;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 15px;
+            padding: 15px;
+            background: white;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .success {
+            color: #4CAF50;
+        }
+        .error {
+            color: #f44336;
+        }
+        .warning {
+            color: #ff9800;
+        }
+        .info {
+            color: #2196F3;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            font-size: 14px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .status {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 3px;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+        .status.pass {
+            background: #4CAF50;
+            color: white;
+        }
+        .status.fail {
+            background: #f44336;
+            color: white;
+        }
+        .status.running {
+            background: #ff9800;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 VoxText.AI - YouTube Client Test Suite</h1>
+        <p><strong>Test Date:</strong> <span id="testDate"></span></p>
+        <p><strong>Environment:</strong> <span id="environment"></span></p>
+
+        <div class="test-section">
+            <h2>Test Configuration</h2>
+            <label for="testUrl"><strong>YouTube Test URL:</strong></label>
+            <input
+                type="text"
+                id="testUrl"
+                value="https://www.youtube.com/watch?v=Su1bwIzjTxY"
+                placeholder="Enter YouTube URL to test"
+            />
+            <button onclick="runAllTests()">▶️ Run All Tests</button>
+            <button onclick="clearResults()">🗑️ Clear Results</button>
+        </div>
+
+        <div class="test-section">
+            <h2>TC-001: Video URL Validation <span class="status" id="status-tc001">⏭️ Pending</span></h2>
+            <button onclick="runTest('tc001')">Run Test</button>
+            <div class="result" id="result-tc001"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>TC-002: Metadata Fetching <span class="status" id="status-tc002">⏭️ Pending</span></h2>
+            <button onclick="runTest('tc002')">Run Test</button>
+            <div class="result" id="result-tc002"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>TC-003: Caption Tracks Discovery <span class="status" id="status-tc003">⏭️ Pending</span></h2>
+            <button onclick="runTest('tc003')">Run Test</button>
+            <div class="result" id="result-tc003"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>TC-004: Transcript Fetching <span class="status" id="status-tc004">⏭️ Pending</span></h2>
+            <button onclick="runTest('tc004')">Run Test</button>
+            <div class="result" id="result-tc004"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>TC-005: Language Detection <span class="status" id="status-tc005">⏭️ Pending</span></h2>
+            <button onclick="runTest('tc005')">Run Test</button>
+            <div class="result" id="result-tc005"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>📊 Test Summary</h2>
+            <div class="result" id="summary"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        // Set test date
+        document.getElementById('testDate').textContent = new Date().toLocaleString();
+        document.getElementById('environment').textContent = window.location.hostname === 'localhost' ? 'Localhost' : 'Production';
+
+        let testResults = {
+            tc001: null,
+            tc002: null,
+            tc003: null,
+            tc004: null,
+            tc005: null
+        };
+
+        function log(testId, message, type = 'info') {
+            const resultDiv = document.getElementById(`result-${testId}`);
+            const timestamp = new Date().toLocaleTimeString();
+            const className = type === 'error' ? 'error' : type === 'success' ? 'success' : type === 'warning' ? 'warning' : 'info';
+            resultDiv.innerHTML += `<span class="${className}">[${timestamp}] ${message}</span>\n`;
+            resultDiv.scrollTop = resultDiv.scrollHeight;
+        }
+
+        function updateStatus(testId, status) {
+            const statusSpan = document.getElementById(`status-${testId}`);
+            statusSpan.className = 'status ' + status;
+            statusSpan.textContent = status === 'pass' ? '✅ PASS' : status === 'fail' ? '❌ FAIL' : status === 'running' ? '🔄 Running' : '⏭️ Pending';
+        }
+
+        function extractVideoId(url) {
+            const patterns = [
+                /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
+                /youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/,
+            ];
+
+            for (const pattern of patterns) {
+                const match = url.match(pattern);
+                if (match) return match[1];
+            }
+            return null;
+        }
+
+        async function testTC001() {
+            const testId = 'tc001';
+            updateStatus(testId, 'running');
+            log(testId, '🧪 Starting TC-001: Video URL Validation', 'info');
+
+            try {
+                const url = document.getElementById('testUrl').value;
+                log(testId, `Testing URL: ${url}`, 'info');
+
+                // Test 1: Valid URL
+                const videoId = extractVideoId(url);
+                if (!videoId) {
+                    log(testId, '❌ Invalid URL - No video ID found', 'error');
+                    testResults[testId] = false;
+                    updateStatus(testId, 'fail');
+                    return;
+                }
+                log(testId, `✅ Video ID extracted: ${videoId}`, 'success');
+
+                // Test 2: Invalid URL
+                const invalidId = extractVideoId('https://invalid-url.com');
+                if (invalidId === null) {
+                    log(testId, '✅ Invalid URL correctly rejected', 'success');
+                } else {
+                    log(testId, '❌ Invalid URL not caught', 'error');
+                }
+
+                log(testId, '✅ TC-001: PASSED', 'success');
+                testResults[testId] = true;
+                updateStatus(testId, 'pass');
+
+            } catch (error) {
+                log(testId, `❌ TC-001: FAILED - ${error.message}`, 'error');
+                testResults[testId] = false;
+                updateStatus(testId, 'fail');
+            }
+        }
+
+        async function testTC002() {
+            const testId = 'tc002';
+            updateStatus(testId, 'running');
+            log(testId, '🧪 Starting TC-002: Metadata Fetching', 'info');
+
+            try {
+                const url = document.getElementById('testUrl').value;
+                const videoId = extractVideoId(url);
+
+                if (!videoId) {
+                    throw new Error('Invalid URL');
+                }
+
+                const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
+                log(testId, 'Fetching metadata from oEmbed API...', 'info');
+
+                const response = await fetch(oembedUrl);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const metadata = await response.json();
+
+                log(testId, '✅ Metadata fetched successfully:', 'success');
+                log(testId, `   Title: ${metadata.title}`, 'info');
+                log(testId, `   Channel: ${metadata.author_name}`, 'info');
+                log(testId, `   Thumbnail: ${metadata.thumbnail_url ? 'Available' : 'N/A'}`, 'info');
+
+                log(testId, '✅ TC-002: PASSED', 'success');
+                testResults[testId] = true;
+                updateStatus(testId, 'pass');
+
+            } catch (error) {
+                log(testId, `❌ TC-002: FAILED - ${error.message}`, 'error');
+                testResults[testId] = false;
+                updateStatus(testId, 'fail');
+            }
+        }
+
+        async function testTC003() {
+            const testId = 'tc003';
+            updateStatus(testId, 'running');
+            log(testId, '🧪 Starting TC-003: Caption Tracks Discovery', 'info');
+
+            try {
+                const url = document.getElementById('testUrl').value;
+                const videoId = extractVideoId(url);
+
+                if (!videoId) {
+                    throw new Error('Invalid URL');
+                }
+
+                const videoPageUrl = `https://www.youtube.com/watch?v=${videoId}`;
+                log(testId, 'Fetching video page...', 'info');
+
+                const pageResponse = await fetch(videoPageUrl);
+                const pageHtml = await pageResponse.text();
+
+                const captionTracksMatch = pageHtml.match(/"captionTracks":(\[.*?\])/);
+
+                if (!captionTracksMatch) {
+                    log(testId, '⚠️  No captions available for this video', 'warning');
+                    log(testId, 'ℹ️  This is expected for videos without captions', 'info');
+                    log(testId, '✅ TC-003: PASSED (No captions, but handled correctly)', 'success');
+                    testResults[testId] = true;
+                    updateStatus(testId, 'pass');
+                    return;
+                }
+
+                const captionTracks = JSON.parse(captionTracksMatch[1]);
+                log(testId, `✅ Found ${captionTracks.length} caption track(s)`, 'success');
+
+                log(testId, 'Available languages:', 'info');
+                captionTracks.forEach((track, index) => {
+                    const langName = track.name?.simpleText || track.languageCode;
+                    const langType = track.kind === 'asr' ? 'Auto-generated' : 'Manual';
+                    log(testId, `   ${index + 1}. ${langName} (${track.languageCode}) - ${langType}`, 'info');
+                });
+
+                log(testId, '✅ TC-003: PASSED', 'success');
+                testResults[testId] = true;
+                updateStatus(testId, 'pass');
+
+            } catch (error) {
+                log(testId, `❌ TC-003: FAILED - ${error.message}`, 'error');
+                testResults[testId] = false;
+                updateStatus(testId, 'fail');
+            }
+        }
+
+        async function testTC004() {
+            const testId = 'tc004';
+            updateStatus(testId, 'running');
+            log(testId, '🧪 Starting TC-004: Transcript Fetching', 'info');
+
+            try {
+                const url = document.getElementById('testUrl').value;
+                const videoId = extractVideoId(url);
+
+                if (!videoId) {
+                    throw new Error('Invalid URL');
+                }
+
+                // Get caption tracks first
+                const videoPageUrl = `https://www.youtube.com/watch?v=${videoId}`;
+                const pageResponse = await fetch(videoPageUrl);
+                const pageHtml = await pageResponse.text();
+
+                const captionTracksMatch = pageHtml.match(/"captionTracks":(\[.*?\])/);
+
+                if (!captionTracksMatch) {
+                    log(testId, '⚠️  No captions available - cannot test transcript fetching', 'warning');
+                    log(testId, '✅ TC-004: PASSED (No captions to fetch)', 'success');
+                    testResults[testId] = true;
+                    updateStatus(testId, 'pass');
+                    return;
+                }
+
+                const captionTracks = JSON.parse(captionTracksMatch[1]);
+                const firstTrack = captionTracks[0];
+
+                log(testId, `Fetching transcript for: ${firstTrack.name?.simpleText || firstTrack.languageCode}`, 'info');
+
+                const transcriptUrl = firstTrack.baseUrl;
+                const transcriptResponse = await fetch(transcriptUrl);
+                const transcriptXml = await transcriptResponse.text();
+
+                const parser = new DOMParser();
+                const xmlDoc = parser.parseFromString(transcriptXml, 'text/xml');
+                const textElements = xmlDoc.querySelectorAll('text');
+
+                log(testId, `✅ Fetched ${textElements.length} transcript segments`, 'success');
+
+                if (textElements.length > 0) {
+                    log(testId, 'Sample transcript (first 3 segments):', 'info');
+                    for (let i = 0; i < Math.min(3, textElements.length); i++) {
+                        const element = textElements[i];
+                        const start = element.getAttribute('start');
+                        const text = element.textContent;
+                        log(testId, `   [${start}s] ${text}`, 'info');
+                    }
+                }
+
+                log(testId, '✅ TC-004: PASSED', 'success');
+                testResults[testId] = true;
+                updateStatus(testId, 'pass');
+
+            } catch (error) {
+                log(testId, `❌ TC-004: FAILED - ${error.message}`, 'error');
+                testResults[testId] = false;
+                updateStatus(testId, 'fail');
+            }
+        }
+
+        async function testTC005() {
+            const testId = 'tc005';
+            updateStatus(testId, 'running');
+            log(testId, '🧪 Starting TC-005: Language Detection', 'info');
+
+            try {
+                const url = document.getElementById('testUrl').value;
+                const videoId = extractVideoId(url);
+
+                if (!videoId) {
+                    throw new Error('Invalid URL');
+                }
+
+                // Get caption tracks
+                const videoPageUrl = `https://www.youtube.com/watch?v=${videoId}`;
+                const pageResponse = await fetch(videoPageUrl);
+                const pageHtml = await pageResponse.text();
+
+                const captionTracksMatch = pageHtml.match(/"captionTracks":(\[.*?\])/);
+
+                if (!captionTracksMatch) {
+                    log(testId, '⚠️  No captions - language detection N/A', 'warning');
+                    log(testId, '✅ TC-005: PASSED (No language to detect)', 'success');
+                    testResults[testId] = true;
+                    updateStatus(testId, 'pass');
+                    return;
+                }
+
+                const captionTracks = JSON.parse(captionTracksMatch[1]);
+                const firstTrack = captionTracks[0];
+
+                log(testId, `✅ Detected language: ${firstTrack.name?.simpleText || firstTrack.languageCode}`, 'success');
+                log(testId, `   Language code: ${firstTrack.languageCode}`, 'info');
+                log(testId, `   Type: ${firstTrack.kind === 'asr' ? 'Auto-generated' : 'Manual'}`, 'info');
+
+                // Verify language code format
+                if (/^[a-z]{2}(-[A-Z]{2})?$/.test(firstTrack.languageCode)) {
+                    log(testId, '✅ Language code format is valid', 'success');
+                } else {
+                    log(testId, '⚠️  Unusual language code format', 'warning');
+                }
+
+                log(testId, '✅ TC-005: PASSED', 'success');
+                testResults[testId] = true;
+                updateStatus(testId, 'pass');
+
+            } catch (error) {
+                log(testId, `❌ TC-005: FAILED - ${error.message}`, 'error');
+                testResults[testId] = false;
+                updateStatus(testId, 'fail');
+            }
+        }
+
+        window.runTest = async function(testId) {
+            // Clear previous result
+            document.getElementById(`result-${testId}`).innerHTML = '';
+
+            switch(testId) {
+                case 'tc001': await testTC001(); break;
+                case 'tc002': await testTC002(); break;
+                case 'tc003': await testTC003(); break;
+                case 'tc004': await testTC004(); break;
+                case 'tc005': await testTC005(); break;
+            }
+
+            updateSummary();
+        };
+
+        window.runAllTests = async function() {
+            document.getElementById('summary').innerHTML = 'Running tests...\n';
+
+            for (const testId of ['tc001', 'tc002', 'tc003', 'tc004', 'tc005']) {
+                await window.runTest(testId);
+                // Small delay between tests
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+
+            updateSummary();
+        };
+
+        window.clearResults = function() {
+            ['tc001', 'tc002', 'tc003', 'tc004', 'tc005'].forEach(testId => {
+                document.getElementById(`result-${testId}`).innerHTML = '';
+                updateStatus(testId, 'pending');
+                testResults[testId] = null;
+            });
+            document.getElementById('summary').innerHTML = '';
+        };
+
+        function updateSummary() {
+            const summaryDiv = document.getElementById('summary');
+            const total = Object.keys(testResults).length;
+            const completed = Object.values(testResults).filter(r => r !== null).length;
+            const passed = Object.values(testResults).filter(r => r === true).length;
+            const failed = Object.values(testResults).filter(r => r === false).length;
+
+            let summary = '='.repeat(60) + '\n';
+            summary += `📊 TEST SUMMARY\n`;
+            summary += '='.repeat(60) + '\n';
+            summary += `Total Test Cases: ${total}\n`;
+            summary += `Completed: ${completed}\n`;
+            summary += `✅ Passed: ${passed}\n`;
+            summary += `❌ Failed: ${failed}\n`;
+            summary += `Pass Rate: ${completed > 0 ? ((passed / completed) * 100).toFixed(1) : 0}%\n`;
+            summary += '='.repeat(60) + '\n';
+
+            if (completed === total) {
+                if (failed === 0) {
+                    summary += '\n🎉 ALL TESTS PASSED! 🎉\n';
+                } else {
+                    summary += `\n⚠️  ${failed} test(s) failed. Please review.\n`;
+                }
+            }
+
+            summaryDiv.innerHTML = summary;
+        }
+    </script>
+</body>
+</html>

@@ -134,6 +134,10 @@ def _extract_info_cached(url):
     # Check for YouTube cookies file to bypass bot detection
     cookies_path = os.path.join(os.path.dirname(__file__), "youtube_cookies.txt")
 
+    # IMPORTANT:
+    # Avoid forcing YouTube "player_client" variants here. It can drastically reduce the
+    # returned format list (sometimes down to only storyboards / 360p), which breaks
+    # /api/formats and /api/download in production.
     ydl_opts = {
         "quiet": True,
         "no_warnings": True,
@@ -141,9 +145,18 @@ def _extract_info_cached(url):
         "geo_bypass": True,
         "ignore_no_formats_error": True,
         "noplaylist": True,
-        "extractor_args": {"youtube": {"player_client": ["ios", "android", "web"]}},
+        "socket_timeout": 15,
+        "retries": 2,
+        "fragment_retries": 2,
+        "extractor_retries": 2,
         "http_headers": {
-            "User-Agent": "com.google.ios.youtube/19.16.3 (iPhone14,5; U; CPU iOS 15_6 like Mac OS X)"
+            # Use a normal browser UA to get a complete format list.
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/121.0.0.0 Safari/537.36"
+            ),
+            "Accept-Language": "en-US,en;q=0.9",
         },
     }
 
@@ -182,12 +195,24 @@ def _fetch_url_via_ytdlp(caption_url):
     """Fetch a caption URL using yt-dlp's HTTP handler.
     Uses yt-dlp's internal opener which handles cookies, auth tokens,
     and YouTube-specific headers better than raw urllib."""
+    cookies_path = os.path.join(os.path.dirname(__file__), "youtube_cookies.txt")
     ydl_opts = {
         "quiet": True,
         "no_warnings": True,
         "geo_bypass": True,
         "noplaylist": True,
+        "socket_timeout": 15,
+        "http_headers": {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/121.0.0.0 Safari/537.36"
+            ),
+            "Accept-Language": "en-US,en;q=0.9",
+        },
     }
+    if os.path.exists(cookies_path):
+        ydl_opts["cookiefile"] = cookies_path
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         if hasattr(ydl, 'cookiejar'):
             for cookie in _cookie_jar:
@@ -679,6 +704,12 @@ def get_captions():
     """
     url = request.args.get("url")
     lang = request.args.get("lang")
+    # Frontends sometimes accidentally send lang=None/null/undefined (as a string).
+    # Treat these as "no preference" so we auto-pick a valid caption track.
+    if lang is not None:
+        lang = lang.strip()
+        if lang == "" or lang.lower() in ("none", "null", "undefined", "auto"):
+            lang = None
     if not url:
         return jsonify({"error": "Missing 'url' query parameter"}), 400
 
@@ -971,12 +1002,33 @@ def download_video():
     QUALITY_HEIGHT = {"720p HD": 720, "480p": 480, "360p": 360, "240p": 240}
     temp_dir = tempfile.mkdtemp()
     try:
+        cookies_path = os.path.join(os.path.dirname(__file__), "youtube_cookies.txt")
+        common_opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "noplaylist": True,
+            "geo_bypass": True,
+            "socket_timeout": 30,
+            "retries": 2,
+            "fragment_retries": 2,
+            "http_headers": {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/121.0.0.0 Safari/537.36"
+                ),
+                "Accept-Language": "en-US,en;q=0.9",
+            },
+        }
+        if os.path.exists(cookies_path):
+            common_opts["cookiefile"] = cookies_path
+
         if quality == "Audio Only":
             ydl_opts = {
                 "format": "bestaudio/best",
                 "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}],
                 "outtmpl": os.path.join(temp_dir, "%(title)s.%(ext)s"),
-                "quiet": True, "no_warnings": True, "noplaylist": True, "geo_bypass": True,
+                **common_opts,
             }
             ext = "mp3"
             mimetype = "audio/mpeg"
@@ -986,7 +1038,7 @@ def download_video():
                 "format": f"bestvideo[height<={height}]+bestaudio/best[height<={height}]/best",
                 "merge_output_format": "mp4",
                 "outtmpl": os.path.join(temp_dir, "%(title)s.%(ext)s"),
-                "quiet": True, "no_warnings": True, "noplaylist": True, "geo_bypass": True,
+                **common_opts,
             }
             ext = "mp4"
             mimetype = "video/mp4"
