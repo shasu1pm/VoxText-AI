@@ -2,6 +2,7 @@ import { Coffee } from 'lucide-react';
 import React, { useCallback, useEffect, useState, useRef } from 'react';
 import bgImage from '../assets/images/2e9df151a54b12fe338eb91b19c78ee41025ea80.png';
 import logoImage from '../assets/images/19470e93731c079afd8132566ea49f7d11cf333b.png';
+import YouTubeClient from '../lib/youtube-client';
 
 // Custom LinkedIn Icon Component
 const LinkedInIcon = ({ className }: { className?: string }) => (
@@ -1267,29 +1268,9 @@ export default function App() {
     }, 200);
 
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000);
-
-      const params = new URLSearchParams({ url: youtubeUrl });
-      if (langParam) params.set('lang', langParam);
-
-      const response = await fetch(
-        apiUrl(`/captions?${params.toString()}`),
-        { signal: controller.signal }
-      );
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        clearInterval(progressInterval);
-        setTranslateProgress(0);
-        const errData = await response.json().catch(() => ({ error: 'Unknown error' }));
-        setTranscriptError(errData.error || `Failed to fetch captions (${response.status})`);
-        setTranscriptProcessing(false);
-        return;
-      }
-
-      const data = await response.json();
+      // 🚀 CLIENT-SIDE FETCHING - Bypasses VPS IP blocks!
+      // Fetches directly from YouTube using user's browser (user's home IP)
+      const data = await YouTubeClient.getTranscript(youtubeUrl, langParam || undefined);
       clearInterval(progressInterval);
       if (data.segments && data.segments.length > 0) {
         setTranslateProgress(100);
@@ -1303,10 +1284,14 @@ export default function App() {
     } catch (error: unknown) {
       clearInterval(progressInterval);
       setTranslateProgress(0);
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        setTranscriptError('Request timed out. Please try again.');
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      if (errorMessage.includes('No captions')) {
+        setTranscriptError('This video does not have captions available.');
+      } else if (errorMessage.includes('Invalid')) {
+        setTranscriptError('Invalid YouTube URL. Please check the URL and try again.');
       } else {
-        setTranscriptError('Failed to connect to the backend. Make sure the server is running.');
+        setTranscriptError('Failed to fetch captions. Please try again.');
       }
       console.error('❌ Transcript fetch error:', error);
     }
