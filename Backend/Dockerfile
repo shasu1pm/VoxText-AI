@@ -19,6 +19,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy backend code
 COPY server.py .
 
+# Copy YouTube cookies if available (optional - helps bypass bot detection on VPS)
+# Place youtube_cookies.txt in Backend/ directory before building if needed
+
 # Expose Flask port
 EXPOSE 5000
 

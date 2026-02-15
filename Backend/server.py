@@ -48,6 +48,9 @@ def _extract_info_cached(url):
     if url in _info_cache:
         return _info_cache[url]["info"]
 
+    # Check for YouTube cookies file to bypass bot detection
+    cookies_path = os.path.join(os.path.dirname(__file__), "youtube_cookies.txt")
+
     ydl_opts = {
         "quiet": True,
         "no_warnings": True,
@@ -60,6 +63,10 @@ def _extract_info_cached(url):
             "User-Agent": "com.google.ios.youtube/19.16.3 (iPhone14,5; U; CPU iOS 15_6 like Mac OS X)"
         },
     }
+
+    # Add cookies if available (helps bypass YouTube bot detection on VPS/cloud IPs)
+    if os.path.exists(cookies_path):
+        ydl_opts["cookiefile"] = cookies_path
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         # Inject shared cookie jar so cookies persist across requests
         if hasattr(ydl, 'cookiejar'):

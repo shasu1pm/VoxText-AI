@@ -57,3 +57,9 @@ ehthumbs.db
 # Temp files
 *.tmp
 *.temp
+
+# YouTube cookies (contains login session - keep private!)
+*cookies.txt
+cookies.txt
+youtube_cookies.txt
+Backend/youtube_cookies.txt
