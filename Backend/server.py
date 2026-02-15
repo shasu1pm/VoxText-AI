@@ -17,8 +17,8 @@ from youtube_transcript_api._errors import (
     TranscriptsDisabled,
     NoTranscriptFound,
     VideoUnavailable,
-    TooManyRequests,
-    YouTubeRequestFailed
+    YouTubeRequestFailed,
+    CouldNotRetrieveTranscript
 )
 
 app = Flask(__name__)
@@ -111,7 +111,7 @@ def _get_transcript_via_api(video_id, languages=None):
 
     except (TranscriptsDisabled, NoTranscriptFound):
         return None
-    except (VideoUnavailable, TooManyRequests, YouTubeRequestFailed) as e:
+    except (VideoUnavailable, YouTubeRequestFailed, CouldNotRetrieveTranscript) as e:
         # These errors mean we should fall back to yt-dlp
         return None
     except Exception as e:
